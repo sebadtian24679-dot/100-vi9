@@ -4,14 +4,12 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import datetime, timedelta, time
 import openpyxl
-from matplotlib.patches import Patch
 import requests
 from io import BytesIO
 
 # --- CONFIGURACIÓN DE LA WEB ---
 st.set_page_config(page_title="Control Geovita Veta Isabel", layout="wide")
 
-# ID del archivo de Google Drive
 FILE_ID = "1E9zKZGSaU8RIfiZLe8UXszgsde9V7WEf"
 URL_DRIVE = f"https://docs.google.com/spreadsheets/d/{FILE_ID}/export?format=xlsx"
 
@@ -21,7 +19,7 @@ def cargar_excel_drive(url):
         headers = {"User-Agent": "Mozilla/5.0"}
         response = requests.get(url, headers=headers)
         if "html" in response.headers.get('Content-Type', '').lower():
-            st.error("⚠️ Acceso denegado por Google Drive. Verifica que el archivo sea público.")
+            st.error("⚠️ Acceso denegado. Verifica que el archivo sea público.")
             return None
         return BytesIO(response.content)
     except Exception as e:
@@ -34,8 +32,7 @@ def extraer_hm(valor):
         try:
             p = valor.split(':')
             return int(p[0]), int(p[1])
-        except:
-            return None, None
+        except: return None, None
     return None, None
 
 def obtener_color(tarea):
@@ -50,9 +47,8 @@ def obtener_color(tarea):
         if k.lower() in t_norm: return v
     return colores['otros']
 
-# --- INTERFAZ ---
 st.title("📊 Control Operacional Geovita")
-st.markdown("### Veta Isabel - Línea de Tiempo con Zonas de Control")
+st.markdown("### Veta Isabel - Línea de Tiempo Detallada")
 
 archivo_binario = cargar_excel_drive(URL_DRIVE)
 
@@ -60,8 +56,6 @@ if archivo_binario:
     try:
         wb = openpyxl.load_workbook(archivo_binario, data_only=True)
         ws = wb.active
-
-        # Mapeo de fechas (Fila 2)
         fechas_indices = {}
         for col in range(3, 200, 2):
             val = ws.cell(row=2, column=col).value
@@ -69,103 +63,82 @@ if archivo_binario:
             f_str = val.strftime("%d/%m/%Y") if isinstance(val, datetime) else str(val)
             fechas_indices[f_str] = col
 
-        if not fechas_indices:
-            st.warning("No se encontraron fechas válidas.")
-        else:
+        if fechas_indices:
             fecha_sel = st.sidebar.selectbox("📅 Seleccione Fecha:", list(fechas_indices.keys()))
             col_idx = fechas_indices[fecha_sel]
-
             datos = []
-            fecha_ref = datetime(2024, 1, 15) # Fecha base para el eje X
+            fecha_ref = datetime(2024, 1, 15) 
             
             for i in range(3, ws.max_row + 1):
                 indicador = str(ws.cell(row=i, column=1).value).strip().lower()
                 if indicador == 'inicio':
                     tarea = str(ws.cell(row=i, column=2).value).strip()
                     obs = ws.cell(row=i, column=col_idx + 1).value
-                    obs_txt = f"\nObs: {obs}" if obs else ""
                     h_i, m_i = extraer_hm(ws.cell(row=i, column=col_idx).value)
                     h_f, m_f = extraer_hm(ws.cell(row=i + 1, column=col_idx).value)
-
                     if h_i is not None and h_f is not None:
                         dt_i = fecha_ref + timedelta(hours=h_i, minutes=m_i)
                         if h_i < 8: dt_i += timedelta(days=1)
                         dt_f = fecha_ref + timedelta(hours=h_f, minutes=m_f)
                         if h_f < 8: dt_f += timedelta(days=1)
                         if dt_f <= dt_i: dt_f += timedelta(days=1)
-                        
-                        datos.append({'Tarea': tarea, 'Inicio': dt_i, 'Fin': dt_f, 
-                                      'Color': obtener_color(tarea), 'Obs': obs_txt})
+                        datos.append({'Tarea': tarea, 'Inicio': dt_i, 'Fin': dt_f, 'Color': obtener_color(tarea), 'Obs': f"\nObs: {obs}" if obs else ""})
 
             if datos:
                 fig, ax = plt.subplots(figsize=(16, 9))
-                fig.patch.set_facecolor("#0F0F0F")
-                ax.set_facecolor("#0F0F0F")
+                fig.patch.set_facecolor("#0F0F0F"); ax.set_facecolor("#0F0F0F")
 
-                # --- 1. ZONAS DE CONTROL (Sombreado de fondo) ---
-                # Horarios típicos: Cambio turno (8:00 y 20:00), Colaciones (13:00 y 01:00)
-                zonas = [
-                    (7.5, 8.5, "#444444", "CAMBIO TURNO / INICIO"),
-                    (13.0, 14.0, "#1A331A", "COLACIÓN DÍA"),
-                    (19.5, 20.5, "#444444", "CAMBIO TURNO NOCHE"),
-                    (25.0, 26.0, "#1A331A", "COLACIÓN NOCHE"), # 01:00 AM del día siguiente
-                    (31.5, 32.5, "#444444", "FIN DE JORNADA")    # 07:30 AM del día siguiente
+                # --- CONFIGURACIÓN DE HITOS (Líneas Rojas Segmentadas) ---
+                hitos_rojos = [8, 20, 32] # 8am, 8pm, 8am (+1 día)
+                for h in hitos_rojos:
+                    pos = fecha_ref + timedelta(hours=h)
+                    ax.axvline(pos, color="red", linestyle="--", linewidth=2, zorder=20, alpha=0.8)
+                    label = "INICIO/FIN DÍA" if (h==8 or h==32) else "CAMBIO TURNO"
+                    ax.text(pos, 18.5, label, color="red", fontsize=9, ha='center', fontweight='bold')
+
+                # --- ZONAS DE COLACIÓN Y CHARLAS (Sombreados) ---
+                zonas_sombra = [
+                    (8.0, 8.75, "#222244", "CHARLA"),
+                    (12.0, 15.0, "#1A331A", "ALMUERZO"),
+                    (20.0, 20.75, "#222244", "CHARLA NOCHE"),
+                    (24.0, 27.0, "#1A331A", "ALMUERZO NOCHE")
                 ]
+                for z_ini, z_fin, z_col, z_lbl in zonas_sombra:
+                    ax.axvspan(fecha_ref + timedelta(hours=z_ini), fecha_ref + timedelta(hours=z_fin), color=z_col, alpha=0.4, zorder=0)
+                    ax.text(fecha_ref + timedelta(hours=(z_ini+z_fin)/2), -17.5, z_lbl, color="white", fontsize=7, ha='center', alpha=0.6)
 
-                for z_ini, z_fin, z_col, z_lbl in zonas:
-                    ax.axvspan(fecha_ref + timedelta(hours=z_ini), 
-                               fecha_ref + timedelta(hours=z_fin), 
-                               color=z_col, alpha=0.3, zorder=0)
-                    ax.text(fecha_ref + timedelta(hours=(z_ini + z_fin)/2), 17, z_lbl, 
-                            color="white", fontsize=8, ha='center', alpha=0.5)
-
-                # --- 2. GRILLA Y EJES ---
+                # --- GRILLA Y EJES ---
                 ax.xaxis.set_major_locator(mdates.HourLocator(interval=1))
-                ax.grid(which='major', axis='x', color='white', linestyle='--', alpha=0.15, zorder=0)
+                ax.grid(which='major', axis='x', color='white', linestyle='-', alpha=0.1, zorder=0)
                 ax.axhline(0, color="white", linewidth=2, zorder=10)
 
-                # --- 3. DIBUJAR TAREAS ---
-                ocup_b = {0.1: datetime(2000, 1, 1), -1.5: datetime(2000, 1, 1), -0.7: datetime(2000, 1, 1)}
-                ocup_t = {5: datetime(2000, 1, 1), 9: datetime(2000, 1, 1), 13: datetime(2000, 1, 1),
-                          -5: datetime(2000, 1, 1), -9: datetime(2000, 1, 1), -13: datetime(2000, 1, 1)}
+                # --- DIBUJAR TAREAS (Gestión de niveles) ---
+                ocup_b = {0.1: datetime(2000,1,1), -1.5: datetime(2000,1,1), -0.7: datetime(2000,1,1)}
+                ocup_t = {5: datetime(2000,1,1), 9: datetime(2000,1,1), 13: datetime(2000,1,1), -5: datetime(2000,1,1), -9: datetime(2000,1,1), -13: datetime(2000,1,1)}
 
                 for f in sorted(datos, key=lambda x: x['Inicio']):
                     dur = f['Fin'] - f['Inicio']
                     punto_m = f['Inicio'] + dur / 2
-
                     n_b = 0.1
                     for p in ocup_b:
                         if f['Inicio'] >= ocup_b[p]: n_b = p; break
                     ocup_b[n_b] = f['Fin']
-
                     opcs = [5, 9, 13] if n_b > 0 else [-5, -9, -13]
                     n_t = opcs[0]
                     for n in opcs:
                         if f['Inicio'] >= ocup_t[n]: n_t = n; break
                     ocup_t[n_t] = f['Fin'] + timedelta(minutes=90)
 
-                    ax.broken_barh([(f['Inicio'], dur)], (n_b, 1.3), facecolors=f['Color'], 
-                                   edgecolors='white', alpha=0.8, zorder=11)
+                    ax.broken_barh([(f['Inicio'], dur)], (n_b, 1.3), facecolors=f['Color'], edgecolors='white', alpha=0.8, zorder=11)
                     ax.vlines(punto_m, n_b + 0.65 if n_t > 0 else n_b, n_t, color="white", alpha=0.3)
-
                     lbl = f"{f['Tarea']}\n{f['Inicio'].strftime('%H:%M')}-{f['Fin'].strftime('%H:%M')}{f['Obs']}"
-                    ax.annotate(lbl, xy=(punto_m, n_t), xytext=(0, 10 if n_t > 0 else -10),
-                                textcoords="offset points", va="bottom" if n_t > 0 else "top", ha="center",
-                                bbox=dict(boxstyle='round,pad=0.3', fc=f['Color'], ec='white', alpha=0.9),
-                                fontsize=8, fontweight='bold', color='black', zorder=15)
+                    ax.annotate(lbl, xy=(punto_m, n_t), xytext=(0, 10 if n_t > 0 else -10), textcoords="offset points", va="bottom" if n_t > 0 else "top", ha="center", bbox=dict(boxstyle='round,pad=0.3', fc=f['Color'], ec='white', alpha=0.9), fontsize=8, fontweight='bold', color='black', zorder=15)
 
-                ax.set_ylim(-18, 18)
+                ax.set_ylim(-20, 20)
                 ax.set_xlim(fecha_ref + timedelta(hours=7.5), fecha_ref + timedelta(hours=32.5))
                 ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
                 plt.xticks(color="white", rotation=45)
                 plt.yticks([])
-                
-                # Quitar bordes innecesarios
                 for s in ["left", "top", "right"]: ax.spines[s].set_visible(False)
-
                 st.pyplot(fig)
-            else:
-                st.info("No hay tareas registradas para esta fecha.")
-
-    except Exception as e:
-        st.error(f"Error procesando el Excel: {e}")
+    except Exception as e: st.error(f"Error: {e}")
