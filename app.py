@@ -6,7 +6,8 @@ from datetime import datetime, timedelta, time
 import openpyxl
 import requests
 from io import BytesIO
-import os # Para verificar la existencia del logo
+import os
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 
 # --- CONFIGURACIÓN DE LA WEB ---
 st.set_page_config(page_title="Control Geovita Veta Isabel", layout="wide")
@@ -20,7 +21,7 @@ def cargar_excel_drive(url):
         headers = {"User-Agent": "Mozilla/5.0"}
         response = requests.get(url, headers=headers)
         if "html" in response.headers.get('Content-Type', '').lower():
-            st.error("⚠️ Acceso denegado. Verifica que el archivo sea público.")
+            st.error("⚠️ Acceso denegado. Verifica que el archivo sea público en Drive.")
             return None
         return BytesIO(response.content)
     except Exception as e:
@@ -49,7 +50,7 @@ def obtener_color(tarea):
     return colores['otros']
 
 st.title("📊 Control Operacional Geovita")
-st.markdown("### Veta Isabel - Línea de Tiempo con Logo")
+st.markdown("### Veta Isabel - Línea de Tiempo Detallada")
 
 archivo_binario = cargar_excel_drive(URL_DRIVE)
 
@@ -89,24 +90,28 @@ if archivo_binario:
                 fig, ax = plt.subplots(figsize=(16, 9))
                 fig.patch.set_facecolor("#0F0F0F"); ax.set_facecolor("#0F0F0F")
 
-                # --- 🟢 NUEVO: CARGAR LOGO DESDE GITHUB 🟢 ---
-                # Se asume que el archivo se llama 'logo_geovita.png' y está en la raíz del repo
-                logo_path = "logo geovita.png"
-                if os.path.exists(logo_path):
-                    img = plt.imread(logo_path)
-                    # Posicionamiento: xo, yo son coordenadas en píxeles. 
-                    # Alpha 0.15 para que sea una marca de agua suave.
-                    fig.figimage(img, xo=500, yo=350, alpha=0.15, zorder=1)
-                
-                # --- CONFIGURACIÓN DE HITOS (Líneas Rojas Segmentadas) ---
+                # --- 🟢 LOGO CENTRADO Y ESCALADO 🟢 ---
+                try:
+                    logo_path = "logo_geovita.png"
+                    if os.path.exists(logo_path):
+                        img = plt.imread(logo_path)
+                        # zoom=0.4 achica la imagen. alpha=0.10 la hace muy tenue para el fondo.
+                        imagebox = OffsetImage(img, zoom=0.4, alpha=0.10) 
+                        centro_x = fecha_ref + timedelta(hours=20)
+                        ab = AnnotationBbox(imagebox, (centro_x, 0), frameon=False, zorder=1)
+                        ax.add_artist(ab)
+                except Exception as e:
+                    print(f"Error al cargar logo: {e}")
+
+                # --- HITOS (Líneas Rojas Segmentadas) ---
                 hitos_rojos = [8, 20, 32] 
                 for h in hitos_rojos:
                     pos = fecha_ref + timedelta(hours=h)
                     ax.axvline(pos, color="red", linestyle="--", linewidth=2, zorder=20, alpha=0.8)
-                    label = "INICIO/FIN DÍA" if (h==8 or h==32) else "CAMBIO TURNO"
+                    label = "INICIO/FIN DÍA (8AM)" if (h==8 or h==32) else "CAMBIO TURNO (8PM)"
                     ax.text(pos, 18.5, label, color="red", fontsize=9, ha='center', fontweight='bold')
 
-                # --- ZONAS DE COLACIÓN Y CHARLAS (Sombreados) ---
+                # --- ZONAS DE COLACIÓN Y CHARLAS ---
                 zonas_sombra = [
                     (8.0, 8.75, "#222244", "CHARLA"),
                     (12.0, 15.0, "#1A331A", "ALMUERZO"),
@@ -115,7 +120,7 @@ if archivo_binario:
                 ]
                 for z_ini, z_fin, z_col, z_lbl in zonas_sombra:
                     ax.axvspan(fecha_ref + timedelta(hours=z_ini), fecha_ref + timedelta(hours=z_fin), color=z_col, alpha=0.4, zorder=0)
-                    ax.text(fecha_ref + timedelta(hours=(z_ini+z_fin)/2), -17.5, z_lbl, color="white", fontsize=7, ha='center', alpha=0.6)
+                    ax.text(fecha_ref + timedelta(hours=(z_ini+z_fin)/2), -18.5, z_lbl, color="white", fontsize=7, ha='center', alpha=0.6)
 
                 # --- GRILLA Y EJES ---
                 ax.xaxis.set_major_locator(mdates.HourLocator(interval=1))
@@ -151,6 +156,6 @@ if archivo_binario:
                 plt.yticks([])
                 for s in ["left", "top", "right"]: ax.spines[s].set_visible(False)
                 st.pyplot(fig)
-    except Exception as e: st.error(f"Error: {e}")
+    except Exception as e: st.error(f"Error procesando datos: {e}")
 
 
