@@ -91,7 +91,7 @@ if archivo_binario:
 
                 # --- 🟢 NUEVO: CARGAR LOGO DESDE GITHUB 🟢 ---
                 # Se asume que el archivo se llama 'logo_geovita.png' y está en la raíz del repo
-                logo_path = "logo_geovita.png"
+                logo_path = "logo geovita.png"
                 if os.path.exists(logo_path):
                     img = plt.imread(logo_path)
                     # Posicionamiento: xo, yo son coordenadas en píxeles. 
@@ -152,4 +152,5 @@ if archivo_binario:
                 for s in ["left", "top", "right"]: ax.spines[s].set_visible(False)
                 st.pyplot(fig)
     except Exception as e: st.error(f"Error: {e}")
+
 
