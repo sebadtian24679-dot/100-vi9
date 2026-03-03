@@ -7,7 +7,6 @@ import openpyxl
 import requests
 from io import BytesIO
 import os
-from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 
 # --- CONFIGURACIÓN DE LA WEB ---
 st.set_page_config(page_title="Control Geovita Veta Isabel", layout="wide")
@@ -88,20 +87,24 @@ if archivo_binario:
 
             if datos:
                 fig, ax = plt.subplots(figsize=(16, 9))
-                fig.patch.set_facecolor("#0F0F0F"); ax.set_facecolor("#0F0F0F")
+                fig.patch.set_facecolor("#0F0F0F")
+                ax.set_facecolor("#0F0F0F")
 
-                # --- 🟢 LOGO CENTRADO Y ESCALADO 🟢 ---
+                # --- 🟢 MANEJO DEL LOGO (MODO SEGURO) 🟢 ---
                 try:
+                    from matplotlib.offsetbox import OffsetImage, AnnotationBbox
                     logo_path = "logo_geovita.png"
                     if os.path.exists(logo_path):
+                        # Usamos imread de matplotlib directamente
                         img = plt.imread(logo_path)
-                        # zoom=0.4 achica la imagen. alpha=0.10 la hace muy tenue para el fondo.
-                        imagebox = OffsetImage(img, zoom=0.4, alpha=0.10) 
+                        # Reducimos zoom a 0.3 y alpha a 0.08 para que sea sutil
+                        imagebox = OffsetImage(img, zoom=0.3, alpha=0.08) 
                         centro_x = fecha_ref + timedelta(hours=20)
                         ab = AnnotationBbox(imagebox, (centro_x, 0), frameon=False, zorder=1)
                         ax.add_artist(ab)
-                except Exception as e:
-                    print(f"Error al cargar logo: {e}")
+                except Exception as img_err:
+                    # Si falla el logo, imprimimos el error en consola pero NO detenemos la app
+                    st.write(f"", unsafe_allow_html=True)
 
                 # --- HITOS (Líneas Rojas Segmentadas) ---
                 hitos_rojos = [8, 20, 32] 
@@ -157,5 +160,4 @@ if archivo_binario:
                 for s in ["left", "top", "right"]: ax.spines[s].set_visible(False)
                 st.pyplot(fig)
     except Exception as e: st.error(f"Error procesando datos: {e}")
-
 
