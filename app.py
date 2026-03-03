@@ -93,7 +93,7 @@ if archivo_binario:
                 # --- 🟢 MANEJO DEL LOGO (MODO SEGURO) 🟢 ---
                 try:
                     from matplotlib.offsetbox import OffsetImage, AnnotationBbox
-                    logo_path = "logo_geovita.png"
+                    logo_path = "logo geovita.png"
                     if os.path.exists(logo_path):
                         # Usamos imread de matplotlib directamente
                         img = plt.imread(logo_path)
@@ -160,4 +160,5 @@ if archivo_binario:
                 for s in ["left", "top", "right"]: ax.spines[s].set_visible(False)
                 st.pyplot(fig)
     except Exception as e: st.error(f"Error procesando datos: {e}")
+
 
