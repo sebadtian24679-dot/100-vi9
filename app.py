@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, time
 import openpyxl
 import requests
 from io import BytesIO
+import os # Para verificar la existencia del logo
 
 # --- CONFIGURACIÓN DE LA WEB ---
 st.set_page_config(page_title="Control Geovita Veta Isabel", layout="wide")
@@ -48,7 +49,7 @@ def obtener_color(tarea):
     return colores['otros']
 
 st.title("📊 Control Operacional Geovita")
-st.markdown("### Veta Isabel - Línea de Tiempo Detallada")
+st.markdown("### Veta Isabel - Línea de Tiempo con Logo")
 
 archivo_binario = cargar_excel_drive(URL_DRIVE)
 
@@ -88,8 +89,17 @@ if archivo_binario:
                 fig, ax = plt.subplots(figsize=(16, 9))
                 fig.patch.set_facecolor("#0F0F0F"); ax.set_facecolor("#0F0F0F")
 
+                # --- 🟢 NUEVO: CARGAR LOGO DESDE GITHUB 🟢 ---
+                # Se asume que el archivo se llama 'logo_geovita.png' y está en la raíz del repo
+                logo_path = "logo geovita.png"
+                if os.path.exists(logo_path):
+                    img = plt.imread(logo_path)
+                    # Posicionamiento: xo, yo son coordenadas en píxeles. 
+                    # Alpha 0.15 para que sea una marca de agua suave.
+                    fig.figimage(img, xo=500, yo=350, alpha=0.15, zorder=1)
+                
                 # --- CONFIGURACIÓN DE HITOS (Líneas Rojas Segmentadas) ---
-                hitos_rojos = [8, 20, 32] # 8am, 8pm, 8am (+1 día)
+                hitos_rojos = [8, 20, 32] 
                 for h in hitos_rojos:
                     pos = fecha_ref + timedelta(hours=h)
                     ax.axvline(pos, color="red", linestyle="--", linewidth=2, zorder=20, alpha=0.8)
@@ -112,7 +122,7 @@ if archivo_binario:
                 ax.grid(which='major', axis='x', color='white', linestyle='-', alpha=0.1, zorder=0)
                 ax.axhline(0, color="white", linewidth=2, zorder=10)
 
-                # --- DIBUJAR TAREAS (Gestión de niveles) ---
+                # --- DIBUJAR TAREAS ---
                 ocup_b = {0.1: datetime(2000,1,1), -1.5: datetime(2000,1,1), -0.7: datetime(2000,1,1)}
                 ocup_t = {5: datetime(2000,1,1), 9: datetime(2000,1,1), 13: datetime(2000,1,1), -5: datetime(2000,1,1), -9: datetime(2000,1,1), -13: datetime(2000,1,1)}
 
