@@ -11,28 +11,22 @@ from io import BytesIO
 # --- CONFIGURACIÓN DE LA WEB ---
 st.set_page_config(page_title="Control Geovita Veta Isabel", layout="wide")
 
-# NUEVO ID del archivo actualizado
+# ID del archivo de Google Drive
 FILE_ID = "1E9zKZGSaU8RIfiZLe8UXszgsde9V7WEf"
 URL_DRIVE = f"https://docs.google.com/spreadsheets/d/{FILE_ID}/export?format=xlsx"
-
 
 @st.cache_data(ttl=300)
 def cargar_excel_drive(url):
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
         response = requests.get(url, headers=headers)
-
-        # Validación de tipo de contenido
         if "html" in response.headers.get('Content-Type', '').lower():
-            st.error(
-                "⚠️ Acceso denegado por Google Drive. Por favor, asegúrate de que el archivo esté compartido como 'Cualquier persona con el enlace'.")
+            st.error("⚠️ Acceso denegado por Google Drive. Verifica que el archivo sea público.")
             return None
-
         return BytesIO(response.content)
     except Exception as e:
         st.error(f"❌ Error de conexión: {e}")
         return None
-
 
 def extraer_hm(valor):
     if isinstance(valor, (time, datetime)): return valor.hour, valor.minute
@@ -43,7 +37,6 @@ def extraer_hm(valor):
         except:
             return None, None
     return None, None
-
 
 def obtener_color(tarea):
     colores = {
@@ -57,10 +50,9 @@ def obtener_color(tarea):
         if k.lower() in t_norm: return v
     return colores['otros']
 
-
 # --- INTERFAZ ---
 st.title("📊 Control Operacional Geovita")
-st.markdown("### Veta Isabel - Línea de Tiempo Online")
+st.markdown("### Veta Isabel - Línea de Tiempo con Zonas de Control")
 
 archivo_binario = cargar_excel_drive(URL_DRIVE)
 
@@ -69,7 +61,7 @@ if archivo_binario:
         wb = openpyxl.load_workbook(archivo_binario, data_only=True)
         ws = wb.active
 
-        # Mapeo de fechas (Fila 2, desde Columna 3)
+        # Mapeo de fechas (Fila 2)
         fechas_indices = {}
         for col in range(3, 200, 2):
             val = ws.cell(row=2, column=col).value
@@ -78,16 +70,15 @@ if archivo_binario:
             fechas_indices[f_str] = col
 
         if not fechas_indices:
-            st.warning("No se encontraron fechas válidas en la fila 2.")
+            st.warning("No se encontraron fechas válidas.")
         else:
             fecha_sel = st.sidebar.selectbox("📅 Seleccione Fecha:", list(fechas_indices.keys()))
             col_idx = fechas_indices[fecha_sel]
 
-            # Procesar Datos
             datos = []
-            fecha_ref = datetime(2024, 1, 15)
+            fecha_ref = datetime(2024, 1, 15) # Fecha base para el eje X
+            
             for i in range(3, ws.max_row + 1):
-                # Buscamos la fila donde dice 'Inicio' en la columna 1
                 indicador = str(ws.cell(row=i, column=1).value).strip().lower()
                 if indicador == 'inicio':
                     tarea = str(ws.cell(row=i, column=2).value).strip()
@@ -102,17 +93,38 @@ if archivo_binario:
                         dt_f = fecha_ref + timedelta(hours=h_f, minutes=m_f)
                         if h_f < 8: dt_f += timedelta(days=1)
                         if dt_f <= dt_i: dt_f += timedelta(days=1)
-                        datos.append({'Tarea': tarea, 'Inicio': dt_i, 'Fin': dt_f, 'Color': obtener_color(tarea),
-                                      'Obs': obs_txt})
+                        
+                        datos.append({'Tarea': tarea, 'Inicio': dt_i, 'Fin': dt_f, 
+                                      'Color': obtener_color(tarea), 'Obs': obs_txt})
 
             if datos:
                 fig, ax = plt.subplots(figsize=(16, 9))
-                fig.patch.set_facecolor("#0F0F0F");
+                fig.patch.set_facecolor("#0F0F0F")
                 ax.set_facecolor("#0F0F0F")
 
+                # --- 1. ZONAS DE CONTROL (Sombreado de fondo) ---
+                # Horarios típicos: Cambio turno (8:00 y 20:00), Colaciones (13:00 y 01:00)
+                zonas = [
+                    (7.5, 8.5, "#444444", "CAMBIO TURNO / INICIO"),
+                    (13.0, 14.0, "#1A331A", "COLACIÓN DÍA"),
+                    (19.5, 20.5, "#444444", "CAMBIO TURNO NOCHE"),
+                    (25.0, 26.0, "#1A331A", "COLACIÓN NOCHE"), # 01:00 AM del día siguiente
+                    (31.5, 32.5, "#444444", "FIN DE JORNADA")    # 07:30 AM del día siguiente
+                ]
+
+                for z_ini, z_fin, z_col, z_lbl in zonas:
+                    ax.axvspan(fecha_ref + timedelta(hours=z_ini), 
+                               fecha_ref + timedelta(hours=z_fin), 
+                               color=z_col, alpha=0.3, zorder=0)
+                    ax.text(fecha_ref + timedelta(hours=(z_ini + z_fin)/2), 17, z_lbl, 
+                            color="white", fontsize=8, ha='center', alpha=0.5)
+
+                # --- 2. GRILLA Y EJES ---
+                ax.xaxis.set_major_locator(mdates.HourLocator(interval=1))
+                ax.grid(which='major', axis='x', color='white', linestyle='--', alpha=0.15, zorder=0)
                 ax.axhline(0, color="white", linewidth=2, zorder=10)
 
-                # Gestión de niveles para evitar colisiones
+                # --- 3. DIBUJAR TAREAS ---
                 ocup_b = {0.1: datetime(2000, 1, 1), -1.5: datetime(2000, 1, 1), -0.7: datetime(2000, 1, 1)}
                 ocup_t = {5: datetime(2000, 1, 1), 9: datetime(2000, 1, 1), 13: datetime(2000, 1, 1),
                           -5: datetime(2000, 1, 1), -9: datetime(2000, 1, 1), -13: datetime(2000, 1, 1)}
@@ -132,8 +144,8 @@ if archivo_binario:
                         if f['Inicio'] >= ocup_t[n]: n_t = n; break
                     ocup_t[n_t] = f['Fin'] + timedelta(minutes=90)
 
-                    ax.broken_barh([(f['Inicio'], dur)], (n_b, 1.3), facecolors=f['Color'], edgecolors='white',
-                                   alpha=0.8, zorder=11)
+                    ax.broken_barh([(f['Inicio'], dur)], (n_b, 1.3), facecolors=f['Color'], 
+                                   edgecolors='white', alpha=0.8, zorder=11)
                     ax.vlines(punto_m, n_b + 0.65 if n_t > 0 else n_b, n_t, color="white", alpha=0.3)
 
                     lbl = f"{f['Tarea']}\n{f['Inicio'].strftime('%H:%M')}-{f['Fin'].strftime('%H:%M')}{f['Obs']}"
@@ -145,10 +157,15 @@ if archivo_binario:
                 ax.set_ylim(-18, 18)
                 ax.set_xlim(fecha_ref + timedelta(hours=7.5), fecha_ref + timedelta(hours=32.5))
                 ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
-                plt.xticks(color="white")
+                plt.xticks(color="white", rotation=45)
                 plt.yticks([])
+                
+                # Quitar bordes innecesarios
+                for s in ["left", "top", "right"]: ax.spines[s].set_visible(False)
+
                 st.pyplot(fig)
             else:
-                st.info("No se encontraron tareas para la fecha seleccionada.")
+                st.info("No hay tareas registradas para esta fecha.")
+
     except Exception as e:
         st.error(f"Error procesando el Excel: {e}")
