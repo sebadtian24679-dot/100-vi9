@@ -19,12 +19,9 @@ def cargar_excel_drive(url):
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
         response = requests.get(url, headers=headers)
-        if "html" in response.headers.get('Content-Type', '').lower():
-            st.error("⚠️ Acceso denegado. Verifica que el archivo sea público en Drive.")
-            return None
         return BytesIO(response.content)
     except Exception as e:
-        st.error(f"❌ Error de conexión: {e}")
+        st.error(f"❌ Error de conexión Drive: {e}")
         return None
 
 def extraer_hm(valor):
@@ -49,7 +46,6 @@ def obtener_color(tarea):
     return colores['otros']
 
 st.title("📊 Control Operacional Geovita")
-st.markdown("### Veta Isabel - Línea de Tiempo Detallada")
 
 archivo_binario = cargar_excel_drive(URL_DRIVE)
 
@@ -65,7 +61,7 @@ if archivo_binario:
             fechas_indices[f_str] = col
 
         if fechas_indices:
-            fecha_sel = st.sidebar.selectbox("📅 Seleccione Fecha:", list(fechas_indices.keys()))
+            fecha_sel = st.sidebar.selectbox("📅 Fecha:", list(fechas_indices.keys()))
             col_idx = fechas_indices[fecha_sel]
             datos = []
             fecha_ref = datetime(2024, 1, 15) 
@@ -90,75 +86,65 @@ if archivo_binario:
                 fig.patch.set_facecolor("#0F0F0F")
                 ax.set_facecolor("#0F0F0F")
 
-                # --- 🟢 MANEJO DEL LOGO (MODO SEGURO) 🟢 ---
+                # --- LÓGICA DE LOGO ENVOLVEMOS EN TRY/EXCEPT TOTAL ---
                 try:
                     from matplotlib.offsetbox import OffsetImage, AnnotationBbox
-                    logo_path = "logo geovita.png"
+                    logo_path = "logo_geovita.png"
                     if os.path.exists(logo_path):
-                        # Usamos imread de matplotlib directamente
-                        img = plt.imread(logo_path)
-                        # Reducimos zoom a 0.3 y alpha a 0.08 para que sea sutil
-                        imagebox = OffsetImage(img, zoom=0.3, alpha=0.08) 
-                        centro_x = fecha_ref + timedelta(hours=20)
-                        ab = AnnotationBbox(imagebox, (centro_x, 0), frameon=False, zorder=1)
+                        img_logo = plt.imread(logo_path)
+                        imagebox = OffsetImage(img_logo, zoom=0.35, alpha=0.08)
+                        # Ubicación central aproximada
+                        ab = AnnotationBbox(imagebox, (fecha_ref + timedelta(hours=20), 0), frameon=False, zorder=0)
                         ax.add_artist(ab)
-                except Exception as img_err:
-                    # Si falla el logo, imprimimos el error en consola pero NO detenemos la app
-                    st.write(f"", unsafe_allow_html=True)
+                except Exception as e:
+                    # Si falla, no hace nada, permite que el gráfico siga
+                    pass
 
-                # --- HITOS (Líneas Rojas Segmentadas) ---
-                hitos_rojos = [8, 20, 32] 
-                for h in hitos_rojos:
+                # --- HITOS ---
+                for h in [8, 20, 32]:
                     pos = fecha_ref + timedelta(hours=h)
-                    ax.axvline(pos, color="red", linestyle="--", linewidth=2, zorder=20, alpha=0.8)
-                    label = "INICIO/FIN DÍA (8AM)" if (h==8 or h==32) else "CAMBIO TURNO (8PM)"
-                    ax.text(pos, 18.5, label, color="red", fontsize=9, ha='center', fontweight='bold')
+                    ax.axvline(pos, color="red", linestyle="--", linewidth=1.5, zorder=5)
+                    txt = "8 AM" if (h==8 or h==32) else "8 PM"
+                    ax.text(pos, 19, txt, color="red", fontsize=8, ha='center')
 
-                # --- ZONAS DE COLACIÓN Y CHARLAS ---
-                zonas_sombra = [
-                    (8.0, 8.75, "#222244", "CHARLA"),
-                    (12.0, 15.0, "#1A331A", "ALMUERZO"),
-                    (20.0, 20.75, "#222244", "CHARLA NOCHE"),
-                    (24.0, 27.0, "#1A331A", "ALMUERZO NOCHE")
-                ]
-                for z_ini, z_fin, z_col, z_lbl in zonas_sombra:
-                    ax.axvspan(fecha_ref + timedelta(hours=z_ini), fecha_ref + timedelta(hours=z_fin), color=z_col, alpha=0.4, zorder=0)
-                    ax.text(fecha_ref + timedelta(hours=(z_ini+z_fin)/2), -18.5, z_lbl, color="white", fontsize=7, ha='center', alpha=0.6)
+                # --- SOMBRAS ---
+                zonas = [(12,15,"#1A331A","ALMUERZO"), (24,27,"#1A331A","CENA"), (8,8.75,"#222244","CHARLA"), (20,20.75,"#222244","CHARLA")]
+                for z_i, z_f, z_c, z_t in zonas:
+                    ax.axvspan(fecha_ref+timedelta(hours=z_i), fecha_ref+timedelta(hours=z_f), color=z_c, alpha=0.3)
 
-                # --- GRILLA Y EJES ---
+                # --- DIBUJO ---
                 ax.xaxis.set_major_locator(mdates.HourLocator(interval=1))
-                ax.grid(which='major', axis='x', color='white', linestyle='-', alpha=0.1, zorder=0)
-                ax.axhline(0, color="white", linewidth=2, zorder=10)
+                ax.grid(axis='x', color='white', alpha=0.1)
+                ax.axhline(0, color="white", linewidth=2)
 
-                # --- DIBUJAR TAREAS ---
                 ocup_b = {0.1: datetime(2000,1,1), -1.5: datetime(2000,1,1), -0.7: datetime(2000,1,1)}
                 ocup_t = {5: datetime(2000,1,1), 9: datetime(2000,1,1), 13: datetime(2000,1,1), -5: datetime(2000,1,1), -9: datetime(2000,1,1), -13: datetime(2000,1,1)}
 
                 for f in sorted(datos, key=lambda x: x['Inicio']):
                     dur = f['Fin'] - f['Inicio']
-                    punto_m = f['Inicio'] + dur / 2
                     n_b = 0.1
                     for p in ocup_b:
                         if f['Inicio'] >= ocup_b[p]: n_b = p; break
                     ocup_b[n_b] = f['Fin']
+                    
                     opcs = [5, 9, 13] if n_b > 0 else [-5, -9, -13]
                     n_t = opcs[0]
                     for n in opcs:
                         if f['Inicio'] >= ocup_t[n]: n_t = n; break
                     ocup_t[n_t] = f['Fin'] + timedelta(minutes=90)
 
-                    ax.broken_barh([(f['Inicio'], dur)], (n_b, 1.3), facecolors=f['Color'], edgecolors='white', alpha=0.8, zorder=11)
-                    ax.vlines(punto_m, n_b + 0.65 if n_t > 0 else n_b, n_t, color="white", alpha=0.3)
-                    lbl = f"{f['Tarea']}\n{f['Inicio'].strftime('%H:%M')}-{f['Fin'].strftime('%H:%M')}{f['Obs']}"
-                    ax.annotate(lbl, xy=(punto_m, n_t), xytext=(0, 10 if n_t > 0 else -10), textcoords="offset points", va="bottom" if n_t > 0 else "top", ha="center", bbox=dict(boxstyle='round,pad=0.3', fc=f['Color'], ec='white', alpha=0.9), fontsize=8, fontweight='bold', color='black', zorder=15)
+                    ax.broken_barh([(f['Inicio'], dur)], (n_b, 1.2), facecolors=f['Color'], alpha=0.8, zorder=10)
+                    lbl = f"{f['Tarea']}\n{f['Inicio'].strftime('%H:%M')}"
+                    ax.annotate(lbl, xy=(f['Inicio']+dur/2, n_t), color='white', fontsize=7, ha='center', zorder=15,
+                                bbox=dict(boxstyle='round', fc=f['Color'], alpha=0.6))
 
                 ax.set_ylim(-20, 20)
                 ax.set_xlim(fecha_ref + timedelta(hours=7.5), fecha_ref + timedelta(hours=32.5))
                 ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
                 plt.xticks(color="white", rotation=45)
                 plt.yticks([])
-                for s in ["left", "top", "right"]: ax.spines[s].set_visible(False)
                 st.pyplot(fig)
-    except Exception as e: st.error(f"Error procesando datos: {e}")
+    except Exception as e:
+        st.error(f"Error crítico: {e}")
 
 
